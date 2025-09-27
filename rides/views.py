@@ -1,4 +1,5 @@
 # rides/views.py
+import logging
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -7,6 +8,8 @@ from django.utils import timezone
 from .models import RideRequest, Pool, Trip
 from .serializers import RideRequestSerializer, PoolSerializer, TripSerializer
 from matching.services import PoolMatchingService, PoolManager
+
+logger = logging.getLogger(__name__)
 
 class RideRequestViewSet(viewsets.ModelViewSet):
     queryset = RideRequest.objects.all()
@@ -28,27 +31,43 @@ class RideRequestViewSet(viewsets.ModelViewSet):
         
         # Create the ride request
         ride_request = serializer.save(rider=request.user)
+
+        # DEBUG: Log the ride request details
+        logger.info(f"New ride request: {ride_request.id}")
+        logger.info(f"Pickup: {ride_request.pickup_latitude}, {ride_request.pickup_longitude}")
+        logger.info(f"Destination: {ride_request.destination_latitude}, {ride_request.destination_longitude}")
         
         # Find matching pools
         matching_service = PoolMatchingService()
         matching_pools = matching_service.find_matching_pools(ride_request)
+
+        # DEBUG: Log matching results
+        logger.info(f"Found {len(matching_pools)} matching pools")
+        for pool in matching_pools:
+            logger.info(f"Pool {pool.id} has {pool.members.count()} members")
         
         if matching_pools:
             # Join the best matching pool
             pool_manager = PoolManager()
-            pool = matching_pools[0]  # In production, implement scoring
+            pool = matching_pools[0]  
             pool_manager.add_to_pool(ride_request, pool)
-            
+
+            pool.refresh_from_db()
+            rider_count = pool.members.count()
+       
             return Response({
                 'status': 'joined_pool',
                 'pool_id': pool.id,
-                'current_riders': pool.members.count(),
-                'message': f'Joined pool with {pool.members.count()} riders'
+                'current_riders': rider_count,
+                'message': f'Joined pool with {rider_count} riders'
             }, status=status.HTTP_201_CREATED)
         else:
             # Create new pool
             pool_manager = PoolManager()
             pool = pool_manager.create_pool(ride_request)
+
+            # DEBUG: Log new pool creation
+            logger.info(f"Created new pool: {pool.id}")
             
             return Response({
                 'status': 'new_pool_created',

@@ -200,11 +200,15 @@ PUSH_NOTIFICATIONS_SETTINGS = {
     "WP_CLAIMS": {'sub': "mailto: development@example.com"}
 }
 
+ALLOWED_HOSTS = ['127.0.0.1', 'localhost', '192.168.104.176']
+
 # CORS Settings (for mobile app)
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
     "https://yourapp.com",
+    "http://192.168.104.176:8000",
+    
 ]
 
 CORS_ALLOW_CREDENTIALS = True
