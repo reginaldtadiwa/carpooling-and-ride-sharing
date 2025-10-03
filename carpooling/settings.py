@@ -145,6 +145,10 @@ REST_FRAMEWORK = {
     }
 }
 
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(days=365), # Tokens valid for 1 year
+}
+
 # drf-spectacular (for API documentation)
 SPECTACULAR_SETTINGS = {
     'TITLE': 'Carpooling API',
@@ -200,7 +204,7 @@ PUSH_NOTIFICATIONS_SETTINGS = {
     "WP_CLAIMS": {'sub': "mailto: development@example.com"}
 }
 
-ALLOWED_HOSTS = ['127.0.0.1', 'localhost', '192.168.104.176']
+ALLOWED_HOSTS = ['127.0.0.1', 'localhost', '192.168.204.176']
 
 # CORS Settings (for mobile app)
 CORS_ALLOWED_ORIGINS = [

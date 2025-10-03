@@ -3,6 +3,8 @@ from celery import shared_task
 from django.utils import timezone
 from rides.models import Pool
 from drivers.services import DriverAssignmentService
+from channels.layers import get_channel_layer
+from asgiref.sync import async_to_sync
 
 @shared_task
 def assign_driver_to_pool(pool_id):
@@ -18,8 +20,19 @@ def assign_driver_to_pool(pool_id):
             pool.status = 'driver_assigned'
             pool.save()
             
-            # Notify all pool members
-            notify_driver_assigned.delay(pool.id, driver.id)
+            # Notify all pool members via WebSocket
+            channel_layer = get_channel_layer()
+            async_to_sync(channel_layer.group_send)(
+                f'pool_{pool.id}',
+                {
+                    'type': 'driver_assigned',
+                    'pool_id': pool.id,
+                    'driver_name': driver.user.get_full_name(),
+                    'vehicle_type': driver.vehicle_type,
+                    'license_plate': driver.license_plate,
+                    'eta_minutes': 5,
+                    'message': f'Driver {driver.user.get_full_name()} is on the way!'
+                })
             
     except Pool.DoesNotExist:
         pass
