@@ -8,7 +8,16 @@ from asgiref.sync import async_to_sync
 class PoolManager:
     def __init__(self):
         self.route_optimizer = RouteOptimizer()
-        self.channel_layer = get_channel_layer()
+        #self.channel_layer = get_channel_layer()
+
+        try:
+            self.channel_layer = get_channel_layer()
+            print(f"DEBUG: Channel layer initialized: {self.channel_layer is not None}")
+        except Exception as e:
+            print(f"DEBUG: ERROR initializing channel layer: {e}")
+            import traceback
+            traceback.print_exc()
+            self.channel_layer = None
     
     def create_pool(self, ride_request):
         """Create a new pool for a ride request"""
@@ -35,22 +44,38 @@ class PoolManager:
         # Update pool members with new optimized order
         self._update_pool_members_order(pool, optimized_route, ride_request)
 
-        # Send WebSocket notification
-        self.notify_rider_joined(pool, ride_request)
+        print(f"DEBUG: Before notify_rider_joined - pool {pool.id}, rider {ride_request.id}")
+
+        try:
+            # Send WebSocket notification
+            self.notify_rider_joined(pool, ride_request)
+            print(f"DEBUG: After notify_rider_joined - success")
+        except Exception as e:
+            print(f"DEBUG: ERROR in notify_rider_joined: {e}")
+            import traceback
+            traceback.print_exc()
+
+        pool.refresh_from_db()
         
-        # Update pool status if full
         if pool.members.count() >= pool.max_riders:
+            print(f"DEBUG: Pool {pool.id} has {pool.members.count()} members, max is {pool.max_riders}")
             pool.status = 'filled'
             pool.closed_at = timezone.now()
             pool.save()
 
-            # Notify pool is full
-            self.notify_pool_filled(pool)
-            
-            # Trigger driver assignment
+            print(f"DEBUG: Before notify_pool_filled - pool {pool.id}")
+            try:
+                self.notify_pool_filled(pool)
+                print(f"DEBUG: After notify_pool_filled - success")
+            except Exception as e:
+                print(f"DEBUG: ERROR in notify_pool_filled: {e}")
+                import traceback
+                traceback.print_exc()
+
             from .tasks import assign_driver_to_pool
             assign_driver_to_pool.delay(pool.id)
-        
+
+            
         return pool
     
     def notify_rider_joined(self, pool, new_rider):
@@ -66,6 +91,7 @@ class PoolManager:
                 'message': f'{new_rider.rider.get_full_name()} joined the pool'
             }
         )
+        print(f"DEBUG: Message sent to pool_{pool.id}")
 
     def notify_pool_filled(self, pool):
         """Notify all pool members that the pool is filled"""
@@ -98,21 +124,16 @@ class PoolManager:
         """Update pickup and dropoff order based on optimized route"""
         # Clear existing memberships and recreate with new order
         pool.members.all().delete()
-        
+    
+        # Get unique ride requests (avoid duplicates from pickup/dropoff sequence)
+        processed_requests = set()
+    
         for i, (request, is_pickup) in enumerate(optimized_route['sequence']):
-            if request == new_ride_request:
-                # This is our new rider
+            if request.id not in processed_requests:
                 PoolMembership.objects.create(
                     pool=pool,
                     ride_request=request,
                     pickup_order=optimized_route['pickup_orders'][request.id],
                     dropoff_order=optimized_route['dropoff_orders'][request.id]
-                )
-            else:
-                # Existing rider - find their membership
-                PoolMembership.objects.create(
-                    pool=pool,
-                    ride_request=request,
-                    pickup_order=optimized_route['pickup_orders'][request.id],
-                    dropoff_order=optimized_route['dropoff_orders'][request.id]
-                )
+            )
+                processed_requests.add(request.id)

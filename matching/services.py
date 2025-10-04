@@ -4,6 +4,7 @@ from datetime import timedelta
 from rides.models import RideRequest, Pool, PoolMembership
 import math
 import logging
+from .pool_manager import PoolManager
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +21,10 @@ class PoolMatchingService:
             status='open',
             created_at__gte=timezone.now() - self.max_wait_time
         ).prefetch_related('members__ride_request')
+        matching_pools = []
+        if matching_pools:
+            pool_manager = PoolManager() 
+            pool_manager.add_to_pool(ride_request, pool)
 
         logger.info(f"Searching through {open_pools.count()} open pools for ride request {ride_request.id}")
         
@@ -55,12 +60,12 @@ class PoolMatchingService:
             return False
         else:
             logger.info(f"Pool {pool.id} passed DESTINATION proximity check")
-        
-        if not self._is_route_compatible(ride_request, pool):
-            logger.info(f"Pool {pool.id} failed ROUTE compatibility check")
-            return False
-        else:
-            logger.info(f"Pool {pool.id} passed ROUTE compatibility check")
+       
+        #if not self._is_route_compatible(ride_request, pool):
+        #    logger.info(f"Pool {pool.id} failed ROUTE compatibility check")
+        #    return True
+        #else:
+        #    logger.info(f"Pool {pool.id} passed ROUTE compatibility check")
         
         if not self._is_within_time_window(pool):
             logger.info(f"Pool {pool.id} failed TIME WINDOW check")
@@ -117,9 +122,9 @@ class PoolMatchingService:
         )
         
         return distance <= self.max_destination_distance
-    
+    """
     def _is_route_compatible(self, ride_request, pool):
-        """Check if adding this rider maintains reasonable detour limits"""
+        
         pool_members = list(pool.members.all())
 
         logger.info(f"=== ROUTE COMPATIBILITY CHECK ===")
@@ -162,7 +167,7 @@ class PoolMatchingService:
         logger.info(" First rider in pool - no detour calculation needed")
         logger.info(f"=== END ROUTE COMPATIBILITY CHECK ===")
         return True
-    
+    """
     def _estimate_pool_route_distance(self, ride_requests):
         """Estimate total route distance for a set of ride requests"""
         if not ride_requests:
@@ -189,7 +194,7 @@ class PoolMatchingService:
         current_lat = float(ride_requests[0].pickup_latitude)
         current_lng = float(ride_requests[0].pickup_longitude)
 
-        logger.info(f"🏁 Starting at: ({current_lat}, {current_lng})")
+        logger.info(f"Starting at: ({current_lat}, {current_lng})")
         
         for i, rr in enumerate(ride_requests):
             rr_lat = float(rr.pickup_latitude)
@@ -216,7 +221,7 @@ class PoolMatchingService:
             logger.info(f"Now at: ({current_lat}, {current_lng})")
             logger.info(f"Subtotal: {total_distance:.2f}m")
 
-        logger.info(f"📏 Total distance: {total_distance:.2f}m")
+        logger.info(f"Total distance: {total_distance:.2f}m")
         return total_distance
     
 
@@ -277,103 +282,4 @@ class PoolMatchingService:
     def _is_within_time_window(self, pool):
         """Check if pool is still within waiting window"""
         return timezone.now() - pool.created_at <= self.max_wait_time
-
-class PoolManager:
-    def __init__(self):
-        from routing.services import RouteOptimizer
-        self.route_optimizer = RouteOptimizer()
-    
-    def create_pool(self, ride_request):
-        """Create a new pool for a ride request"""
-        pool = Pool.objects.create()
-        PoolMembership.objects.create(
-            pool=pool,
-            ride_request=ride_request,
-            pickup_order=1,
-            dropoff_order=1
-        )
-        return pool
-    
-    def add_to_pool(self, ride_request, pool):
-        """Add rider to existing pool with optimized routing"""
-        current_members = list(pool.members.all())
-        all_requests = [member.ride_request for member in current_members] + [ride_request]
-        
-        # Optimize pickup and dropoff order
-        optimized_route = self.route_optimizer.optimize_route(all_requests)
-        
-        # Update pool members with new optimized order
-        self._update_pool_members_order(pool, optimized_route, ride_request)
-        
-        if pool.members.count() >= pool.max_riders:
-            pool.status = 'filled'
-            pool.closed_at = timezone.now()
-            pool.save()
-            
-            from .tasks import assign_driver_to_pool
-            assign_driver_to_pool.delay(pool.id)
-        
-        return pool
-    
-    def _update_pool_members_order(self, pool, optimized_route, new_ride_request):
-
-        """Update pool members based on optimized route - FIXED VERSION"""
-        logger.info(f"_update_pool_members_order started for pool {pool.id}")
-    
-        # Clear existing members
-        deleted_count, _ = PoolMembership.objects.filter(pool=pool).delete()
-        logger.info(f"Deleted {deleted_count} existing members")
-
-        sequence = optimized_route.get('sequence', [])
-        pickup_orders = optimized_route.get('pickup_orders', {})
-        dropoff_orders = optimized_route.get('dropoff_orders', {})
-    
-        logger.info(f"Sequence length: {len(sequence)}")
-        logger.info(f"Pickup orders: {pickup_orders}")
-        logger.info(f"Dropoff orders: {dropoff_orders}")
-
-        # Extract unique ride requests from sequence
-        unique_requests = []
-        seen_ids = set()
-
-        for item in sequence:
-            if isinstance(item, tuple) and len(item) == 2:
-                ride_request_obj, is_pickup = item
-                if hasattr(ride_request_obj, 'id') and ride_request_obj.id not in seen_ids:
-                    seen_ids.add(ride_request_obj.id)
-                    unique_requests.append(ride_request_obj)
-                    logger.info(f"Found ride request: {ride_request_obj.id}")
-
-        logger.info(f"Unique ride requests: {[rr.id for rr in unique_requests]}")
-
-        # If no unique requests found, use the new ride request
-        # If no unique requests found, use the new ride request
-        if not unique_requests:
-            logger.warning("No ride requests found in sequence, using new_ride_request")
-            unique_requests = [new_ride_request]
-
-        # Create memberships
-        for ride_request in unique_requests:
-            pickup_order = pickup_orders.get(ride_request.id, 1)
-            dropoff_order = dropoff_orders.get(ride_request.id, 1)
-        
-            logger.info(f"Creating membership for {ride_request.id}: "
-                   f"pickup_order={pickup_order}, dropoff_order={dropoff_order}")
-            
-            PoolMembership.objects.create(
-                pool=pool,
-                ride_request=ride_request,
-                pickup_order=pickup_order,
-                dropoff_order=dropoff_order
-
-            )
-        
-        final_count = PoolMembership.objects.filter(pool=pool).count()
-        logger.info(f"Final member count: {final_count}")
-    
-
-
-
-
-
 
