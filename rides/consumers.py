@@ -80,6 +80,10 @@ class PoolConsumer(AsyncWebsocketConsumer):
         """Send notification when pool is full"""
         await self.send(text_data=json.dumps(event))
 
+    async def pool_expired(self, event):
+        """Send notification when pool expires"""
+        await self.send(text_data=json.dumps(event))
+
     @database_sync_to_async
     def is_user_in_pool(self):
         """Check if user is part of this pool"""
@@ -141,3 +145,7 @@ class UserConsumer(AsyncWebsocketConsumer):
     async def user_notification(self, event):
         """Send personal notifications to user"""
         await self.send(text_data=json.dumps(event))
+
+    
+
+

@@ -68,6 +68,7 @@ class Pool(models.Model):
         ('driver_assigned', 'Driver Assigned'),
         ('active', 'Active'),
         ('completed', 'Completed'),
+        ('expired', 'Expired'),
     ]
     
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='open')
