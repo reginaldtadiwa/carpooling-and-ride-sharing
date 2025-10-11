@@ -15,3 +15,11 @@ urlpatterns = [
          DriverViewSet.as_view({'post': 'update_location'}), 
          name='driver-location'),
 ]
+
+#WebSocket route
+from django.urls import re_path
+from . import consumers
+
+websocket_urlpatterns = [
+    re_path(r'ws/driver/(?P<driver_id>\w+)/$', consumers.DriverConsumer.as_asgi()),
+]

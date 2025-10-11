@@ -1,55 +1,69 @@
 # matching/tasks.py
 from celery import shared_task
 from django.utils import timezone
+from datetime import timedelta
 from rides.models import Pool, Trip
 from drivers.services import DriverAssignmentService
-from datetime import timedelta
 from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
-import logging
-logger = logging.getLogger(__name__)
 
 @shared_task
 def assign_driver_to_pool(pool_id):
-    """Assign driver to a filled pool"""
+    """Notify nearby drivers about the pool and wait for acceptance"""
     try:
         pool = Pool.objects.get(id=pool_id, status='filled')
         assignment_service = DriverAssignmentService()
-        driver = assignment_service.find_best_driver(pool)
-
-        if driver:
-            logger.info(f"Driver '{driver.user.get_full_name()}' (ID: {driver.id}) found and available for Pool ID {pool.id}.")
-
-            # Create trip and assign driver
-            trip = Trip.objects.create(pool=pool, driver=driver)
-            pool.status = 'driver_assigned'
-            pool.save()
-
-            logger.info(f"Driver assigned to Trip ID {trip.id} for Pool ID {pool.id}.")
-
-            # Notify all pool members via WebSocket
-            channel_layer = get_channel_layer()
-            async_to_sync(channel_layer.group_send)(
-                f'pool_{pool.id}',
-                {
-                    'type': 'driver_assigned',
-                    'pool_id': pool.id,
-                    'driver_name': driver.user.get_full_name(),
-                    'vehicle_type': driver.vehicle_type,
-                    'license_plate': driver.license_plate,
-                    'eta_minutes': 5,
-                    'message': f'Driver {driver.user.get_full_name()} is on the way!'
-                })
-
-            logger.info(f"WebSocket notification sent to group 'pool_{pool.id}'.")
-
+        
+        # Find all nearby drivers
+        nearby_drivers = assignment_service.find_available_drivers_near_pool(pool)
+        
+        if nearby_drivers:
+            # Notify all nearby drivers
+            assignment_service.notify_drivers_of_pool(pool, nearby_drivers)
+            print(f"DEBUG: Notified {len(nearby_drivers)} drivers about pool {pool.id}")
+            
+            # Set a timeout task to reassign if no driver accepts
+            wait_for_driver_acceptance.apply_async(
+                args=[pool_id], 
+                countdown=assignment_service.assignment_timeout
+            )
         else:
-            logger.info(f"No available driver found for Pool ID {pool.id}.")
-
+            print(f"DEBUG: No available drivers found near pool {pool.id}")
+           
+            
     except Pool.DoesNotExist:
-        logger.warning(f"Pool with ID {pool_id} does not exist or is not in 'filled' status.")
+        print(f"DEBUG: Pool {pool_id} not found or not filled")
 
+@shared_task
+def wait_for_driver_acceptance(pool_id):
+    """Check if any driver accepted the pool, if not, reassign or expire"""
+    try:
+        pool = Pool.objects.get(id=pool_id)
+        
+        # Check if pool already has a driver assigned
+        if pool.status != 'driver_assigned':
+            print(f"DEBUG: No driver accepted pool {pool_id} within timeout")
+    except Pool.DoesNotExist:
+        print(f"DEBUG: Pool {pool_id} not found during acceptance check")
 
+@shared_task
+def driver_accept_pool(driver_id, pool_id):
+    """Handle driver accepting a pool assignment"""
+    try:
+        from drivers.models import Driver
+        driver = Driver.objects.get(id=driver_id)
+        pool = Pool.objects.get(id=pool_id, status='filled')
+        
+        assignment_service = DriverAssignmentService()
+        trip = assignment_service.assign_driver_to_pool(pool, driver)
+        
+        print(f"DEBUG: Driver {driver_id} accepted pool {pool_id}")
+        return trip.id
+        
+    except (Driver.DoesNotExist, Pool.DoesNotExist) as e:
+        print(f"DEBUG: Error in driver acceptance: {e}")
+        return None
+    
 @shared_task
 def notify_pool_expired(pool_id):
     """Notify pool members that the pool has expired"""
