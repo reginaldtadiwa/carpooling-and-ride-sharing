@@ -50,7 +50,7 @@ def wait_for_driver_acceptance(pool_id):
 def driver_accept_pool(driver_id, pool_id):
     """Handle driver accepting a pool assignment"""
     try:
-        from drivers.models import Driver
+        from rides.models import Driver
         driver = Driver.objects.get(id=driver_id)
         pool = Pool.objects.get(id=pool_id, status='filled')
         
