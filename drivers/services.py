@@ -53,7 +53,7 @@ class DriverAssignmentService:
                     'type': 'pool_assignment',
                     'pool_id': pool.id,
                     'pool_size': pool.members.count(),
-                    'estimated_fare': pool.estimated_fare,
+                    'estimated_fare': float(pool.estimated_fare),
                     'pickup_sequence': self._get_pickup_sequence(pool),
                     'timeout_seconds': self.assignment_timeout,
                     'message': f'New pool available with {pool.members.count()} riders'

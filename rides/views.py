@@ -52,6 +52,11 @@ class RideRequestViewSet(viewsets.ModelViewSet):
             pool = matching_pools[0]  
             pool_manager.add_to_pool(ride_request, pool)
 
+            # Update pool estimated fare
+            if ride_request.fare_estimate:
+                pool.estimated_fare = (pool.estimated_fare or 0) + ride_request.fare_estimate
+                pool.save()
+
             pool.refresh_from_db()
             rider_count = pool.members.count()
        
@@ -65,6 +70,11 @@ class RideRequestViewSet(viewsets.ModelViewSet):
             # Create new pool
             pool_manager = PoolManager()
             pool = pool_manager.create_pool(ride_request)
+
+            # Set the initial estimated_fare for the new pool
+            if ride_request.fare_estimate:
+                pool.estimated_fare = ride_request.fare_estimate
+                pool.save()
 
             # DEBUG: Log new pool creation
             logger.info(f"Created new pool: {pool.id}")
