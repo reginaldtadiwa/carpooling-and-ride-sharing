@@ -205,7 +205,7 @@ PUSH_NOTIFICATIONS_SETTINGS = {
     "WP_CLAIMS": {'sub': "mailto: development@example.com"}
 }
 
-ALLOWED_HOSTS = ['127.0.0.1', 'localhost', '192.168.204.176']
+ALLOWED_HOSTS = ['127.0.0.1', 'localhost', '192.168.204.176', '.onrender.com']
 
 # CORS Settings (for mobile app)
 CORS_ALLOWED_ORIGINS = [
