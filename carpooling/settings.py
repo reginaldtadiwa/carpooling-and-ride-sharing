@@ -33,6 +33,7 @@ INSTALLED_APPS = [
     'corsheaders',
     'push_notifications',
     'drf_spectacular',
+    'import_export',
 
     
     # Local apps
