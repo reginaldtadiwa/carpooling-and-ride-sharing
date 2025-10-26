@@ -6,7 +6,7 @@ from .models import RideRequest, Pool, PoolMembership, Driver, Trip
 admin.site.site_header = "Carpooling Administration"
 admin.site.site_title = "Carpooling Admin Portal"
 admin.site.index_title = "Welcome to Carpooling Admin Portal"
-# Resources for export functionality
+
 class RideRequestResource(resources.ModelResource):
     class Meta:
         model = RideRequest

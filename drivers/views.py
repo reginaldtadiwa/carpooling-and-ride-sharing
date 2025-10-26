@@ -38,9 +38,16 @@ class DriverViewSet(viewsets.ModelViewSet):
     def update_availability(self, request, pk=None):
         """Update driver availability"""
         driver = self.get_object()
-        is_available = request.data.get('is_available', False)
         
+        is_available = request.data.get('is_available', driver.is_available)
+        current_latitude = request.data.get('current_latitude')
+        current_longitude = request.data.get('current_longitude')
+
         driver.is_available = is_available
+        if current_latitude is not None:
+            driver.current_latitude = current_latitude
+        if current_longitude is not None:
+            driver.current_longitude = current_longitude        
         driver.save()
         
         return Response({
